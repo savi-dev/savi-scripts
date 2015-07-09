@@ -1,0 +1,189 @@
+#!/bin/bash -f
+#
+# This script submits a Hadoop job to the specified cluster.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+
+desc="This script submits a Hadoop job to the specified cluster. The job is defined by the specified job template.
+There are two types of jobs:
+* Java: user need to specify the main class and the arguments (i.e. the urls of the input and output data).
+* Pig: user need to specify the input and output data source objects.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} <cluster_name> <template_name> <main_class> [args...]
+2. ${script_name} <cluster_name> <template_name> <input_data_source> <output_data_source>
+3. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function command_output_desc() {
+    OUT=$?
+    if [ $OUT -eq 0 ];then
+       echo "Succeeded."
+    else
+       echo $1
+       blue_desc "Failed!"
+       exit 1
+    fi
+}
+
+# Check the prerequisite.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+# Check parameters.
+unset ERR
+if [ -n "$1" ]; then
+    cluster_name=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    template_name=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$ERR" ]; then
+    echo "Error: one or multiple arguments were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+cluster_id=`sahara cluster-show --name ${cluster_name} 2>/dev/null | awk '/ id /{print $4}'`
+if [ -z "$cluster_id" ]; then
+    echo "Error: there is no Hadoop cluster with name '${cluster_name}'."
+    exit 1
+fi
+
+template_id=`sahara job-template-show --name ${template_name} 2>/dev/null | awk '/ id /{print $4}'`
+if [ -z "$template_id" ]; then
+    echo "Error: there is no job template with name '${template_name}'."
+    exit 1
+fi
+
+job_type=`sahara job-template-show --name ${template_name} | awk '/ type /{print $4}'`
+if [ "$job_type" = "Java" ]; then
+    if [ -n "$1" ]; then
+        main_class=$1
+        shift
+    else
+        ERR=1
+    fi
+elif [ "$job_type" = "Pig" ]; then
+    if [ -n "$1" ]; then
+        input_data_source=$1
+        shift
+    else
+        ERR=1
+    fi
+
+    if [ -n "$1" ]; then
+        output_data_source=$1
+        shift
+    else
+        ERR=1
+    fi
+else
+    echo "Error: unexpected job type '${job_type}'."
+    exit 1
+fi
+
+if [ -n "$ERR" ]; then
+    echo "Error: one or multiple arguments were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+#cluster_id=`sahara cluster-show --name ${cluster_name} | awk '/ id /{print $4}'`
+#if [ -z "$cluster_id" ]; then
+#    echo "Error: there is no Hadoop cluster with name '${cluster_name}'."
+#    exit 1
+#fi
+
+#template_id=`sahara job-template-show --name ${template_name} | awk '/ id /{print $4}'`
+#if [ -z "$template_id" ]; then
+#    echo "Error: there is no job template with name '${template_name}'."
+#    exit 1
+#fi
+
+# Submit job
+blue_desc_title "  Submitting a Hadoop job"
+
+if [ "$job_type" = "Java" ]; then
+    command="sahara job-create
+        --job-template ${template_id}
+        --cluster ${cluster_id}
+        --config edp.java.main_class=${main_class}
+        --config fs.swift.service.sahara.username=${OS_USERNAME}
+        --config fs.swift.service.sahara.password=${OS_PASSWORD}"
+    # Append arguments to the command.
+    while [ $# -gt 0 ]; do
+        command="${command}
+        --arg $1"
+        shift
+    done
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "$output"
+elif [ "$job_type" = "Pig" ]; then
+    input_id=`sahara data-source-show --name ${input_data_source} | awk '/ id /{print $4}'`
+    if [ -z "$input_id" ]; then
+        echo "Error: there is no data source object with name '${input_data_source}'."
+        exit 1
+    fi
+
+    output_id=`sahara data-source-show --name ${output_data_source} | awk '/ id /{print $4}'`
+    if [ -z "$output_id" ]; then
+        echo "Error: there is no data source object with name '${output_data_source}'."
+        exit 1
+    fi
+
+    command="sahara job-create --job-template ${template_id} --cluster ${cluster_id}
+        --input-data ${input_id}
+        --output-data ${output_id}"
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "$output"
+fi
+
+echo ""
+blue_desc "Job submission completed."
+

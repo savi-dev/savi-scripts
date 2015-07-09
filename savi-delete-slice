@@ -1,0 +1,12 @@
+#!/bin/bash -f
+source /home/savitb/bin/functions
+USER=$(whoami)
+SLICE="$USER"-slice
+echo "--------------------------------------------------"
+echo "  Deleting a slice ($SLICE) for ($USER)"
+echo "--------------------------------------------------"
+echo "janus fv-deleteslice --slicename $SLICE"
+janus fv-deleteslice --slicename $SLICE
+echo "janus fv-listslices"
+janus fv-listslices
+

@@ -1,2 +1,3 @@
 # savi-scripts
-scripts developed for savi
+These scripts are developed for the SAVI clients
+

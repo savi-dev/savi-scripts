@@ -1,0 +1,149 @@
+#!/bin/bash -f
+#
+# This script uploads file/dir to Swift or HDFS and setup data sources for
+# input and output.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+# * If file/dir is uploaded to HDFS, user needs to have write permission to the corresponding path.
+
+desc="This script uploads file/dir to Swift or HDFS.
+If 'swift' is specified, file or directory at local_path is uploaded to the specified Swift container.
+If 'hdfs' is specified, file or directory at local_path is uploaded to the root directory of the HDFS at the specified cluster.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} swift <container> <local_path>
+2. ${script_name} hdfs <cluster> <local_path>
+3. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function command_output_desc() {
+    OUT=$?
+    if [ $OUT -eq 0 ];then
+       echo "Succeeded."
+    else
+       echo "$1"
+       blue_desc "Failed!"
+       exit 1
+    fi
+}
+
+# Check the prerequisite.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+# Check parameters.
+unset ERR
+if [ -n "$1" ]; then
+    ds_type=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    second_param=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    input_path=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$ERR" ]; then
+    echo "Error: one or multiple arguments were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+blue_desc_title "  Uploading file(s)"
+
+if [ "$ds_type" = "swift" ]; then
+    container_name="${second_param}"
+    input_url="swift://${container_name}.sahara/${input_path}"
+
+    # Create a Swift container.
+    command="swift post ${container_name}"
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "${output}"
+
+    base_dir=`dirname ${input_path}`
+    input_file=`basename ${input_path}`
+
+    # We change the current directory here to reduce the path's length of the uploaded object.
+    if [ "$base_dir" != "." ]; then
+        yellow_desc "cd ${base_dir}"
+        cd ${base_dir}
+    fi
+    # Upload file(s) from local to the Swift container.
+    command="swift upload ${container_name} ${input_file}"
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "${output}"
+    # Change the current directory back.
+    if [ "$base_dir" != "." ]; then
+        cd - 1>/dev/null
+    fi
+elif [ "$ds_type" = "hdfs" ]; then
+    cluster_name="${second_param}"
+    master_ip=`sahara cluster-show --name ${cluster_name} 2>/dev/null | awk -F'[:/]' '/Oozie/{print $5}'`
+    if [ -z "$master_ip" ]; then
+        echo "Error: cannot find cluster with name '${cluster_name}'"
+        exit 1
+    fi
+    hdfs_url="hdfs://${master_ip}:9000/"
+    input_url="${hdfs_url}"
+
+    # Upload file(s) from local to HDFS.
+    command="hdfs dfs -copyFromLocal ${input_path} ${input_url}"
+    yellow_desc "${command}"
+    output=`eval ${command} 2>&1`
+    command_output_desc "${output}"
+else
+    echo "Error: invalid data source type '${ds_type}'."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+echo ""
+blue_desc "File(s) were uploaded."

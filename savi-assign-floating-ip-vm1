@@ -1,0 +1,17 @@
+#!/bin/bash
+#    1. Floating IP address
+#    2. VM IP address (Could run into issues in future if different tenants use same private subnet addresses)
+#
+#!/bin/bash -f
+if [[ -n "$1" ]]; then
+   FLOATING_IP=$1
+else
+   echo "Must specify first parameter (Floating IP address)"
+   ERR=1
+fi
+
+USER=$(whoami)
+VM="$USER"-vm1
+echo "--------------------------------------------------"
+echo "  Creating a $VM for ($USER)"
+echo "--------------------------------------------------"

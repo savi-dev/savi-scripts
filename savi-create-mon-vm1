@@ -1,0 +1,19 @@
+#!/bin/bash -f
+source /home/savitb/bin/functions
+USER=$(whoami)
+KEY_NAME="$USER"ceilokey
+SECGROUP_NAME=$USER
+PROJECT_NAME=$OS_TENANT_NAME
+VM="$USER"-mon-vm1
+MAIN_NETWORK="$PROJECT_NAME"-net
+SC_VM1="mon_script_1.sh"
+
+blue_desc_title "  Creating a $VM for ($USER)"
+green_desc_title "Creating a $VM in $MAIN_NETWORK"
+
+NET_ID=`quantum net-list|grep $MAIN_NETWORK|awk '{print $2}'`
+
+command_desc "nova boot --user_data $HOME/mon_script_1.sh --flavor m1.small --image Ubuntu64.2.1 --key_name $KEY_NAME --security_groups $SECGROUP_NAME --nic net-id=$NET_ID $VM"
+nova boot --user_data $HOME/mon_script_1.sh --flavor m1.small --image Ubuntu64.2.1 --key_name $KEY_NAME --security_groups $SECGROUP_NAME --nic net-id=$NET_ID $VM
+yellow_desc "nova list"
+nova list

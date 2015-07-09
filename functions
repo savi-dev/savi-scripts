@@ -1,0 +1,29 @@
+function command_desc() {
+    echo -e "\e[1;33;40m$1\e[0m"
+    read -p "Press [Enter] key to continue..."
+}
+
+function green_desc() {
+    echo -e "\e[1;32;40m$1\e[0m"
+}
+
+function blue_desc() {
+    echo -e "\e[1;34;40m$1\e[0m"
+}
+function yellow_desc() {
+    echo -e "\e[1;33;40m$1\e[0m"
+}
+
+function green_desc_title() {
+    echo "------------------------------------------------------"
+    echo -e "\e[1;32;40m$1\e[0m"
+    echo "------------------------------------------------------"
+}
+
+function blue_desc_title() {
+    echo "======================================================"
+    echo -e "\e[1;34;40m$1\e[0m"
+    echo "------------------------------------------------------"
+}
+
+

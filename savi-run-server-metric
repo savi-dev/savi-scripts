@@ -1,0 +1,40 @@
+#!/bin/bash
+source /home/savitb/bin/functions
+if [[ -n "$1" ]]; then
+   HOST=$1
+else
+   exit 1
+fi
+unset ERR
+if [[ -n "$1" ]]; then
+   FLAVOR=$1
+else
+   ERR=1
+fi
+if [[ -n "$2" ]]; then
+   IMAGE=$2
+else
+   ERR=1
+fi
+if [[ -n "$3" ]]; then
+   KEY=$3
+else
+   ERR=1
+fi
+if [[ -n "$4" ]]; then
+   SECURITY=$4
+else
+   ERR=1
+fi
+if [[ -n "$5" ]]; then
+   VM_NAME=$5
+else
+   ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    nova boot --flavor $FLAVOR --image $IMAGE --key_name $KEY --security_groups $SECURITY --hint sch_metric=$METRIC $VM_NAME
+    nova list
+else
+    echo "Usage: savi-run-server-metric <flavor> <image> <key> <security group> <metric> <vm name>"
+fi

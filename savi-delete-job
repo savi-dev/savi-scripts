@@ -1,0 +1,177 @@
+#!/bin/bash -f
+#
+# This script deletes the Hadoop job and releases relevant resources.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+# * The target job and its relavent resources are created by using the savi-* scripts.
+
+desc="This script deletes the Hadoop job and releases relevant resources.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} <job_name>
+2. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function command_output_desc() {
+    RET=$?
+    if [ $RET -ne 0 ];then
+        echo $1
+    fi
+}
+
+# Check Testbed's credential.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+if [ -n "$1" ]; then
+    job_name=$1
+else
+    echo "Error: one or multiple parameters were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+tid=`sahara job-template-show --name ${job_name} 2>/dev/null | awk '/ id /{print $4}'`
+if [ -z "$tid" ]; then
+    echo "Error: job '${job_name}' not found."
+    exit 1
+fi
+
+blue_desc_title "  Deleting the Hadoop job"
+
+# Iterate all the submitted jobs, and retrieve their IDs.
+# We used regular expression to match the pattern of a uuid (that is the ID of the job).
+sahara job-list | awk '{print $2}' | egrep "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" | while read job_id; do
+    template_id=`sahara job-show --id ${job_id} | awk '/ job_id /{print $4}'`
+    if [ "$template_id" = "$tid" ]; then
+        # Retrieve the input and output urls.
+        job_type=`sahara job-template-show --id ${template_id} | awk '/ type /{print $4}'`
+        if [ "$job_type" = "Java" ]; then
+            input_url=`sahara job-show --id ${job_id} | egrep -o "(swift|hdfs)://[^']*" | awk 'NR==1'`
+            output_url=`sahara job-show --id ${job_id} | egrep -o "(swift|hdfs)://[^']*" | awk 'NR==2'`
+        elif [ "$job_type" = "Pig" ]; then
+            input_id=`sahara job-show --id ${job_id} | awk '/ input_id /{print $4}'`
+            input_url=`sahara data-source-show --id ${input_id} | awk '/ url /{print $4}'`
+            output_id=`sahara job-show --id ${job_id} | awk '/ output_id /{print $4}'`
+            output_url=`sahara data-source-show --id ${output_id} | awk '/ url /{print $4}'`
+        else
+            echo "Error: unexpected job type '${job_type}'."
+            exit 1
+        fi
+
+        if [[ $input_url == swift://* ]]; then
+            container_name=`echo "${input_url}" | grep -o "swift://[^.]*" | xargs basename`
+            # If data is stored at a Swift container, we simply delete the container.
+            command="swift delete --quiet ${container_name}"
+            yellow_desc "${command}"
+            eval ${command}
+        elif [[ $input_url == hdfs://* ]];then
+            # Delete the input and output files/dirs at HDFS.
+            command="hdfs dfs -rm -r ${input_url}"
+            yellow_desc "${command}"
+            output=`eval ${command} 2>&1`
+            command_output_desc "${output}"
+
+            command="hdfs dfs -rm -r ${output_url}"
+            yellow_desc "${command}"
+            output=`eval ${command} 2>&1`
+            command_output_desc "${output}"
+        else
+            echo "Error: invalid url '${input_url}'."
+            exit 1
+        fi
+
+        # Delete the job.
+        command="sahara job-delete --id ${job_id}"
+        yellow_desc "${command}"
+        eval ${command}
+
+        # Delete input and output data source objects if any.
+        if [ -n "$input_id" ]; then
+            command="sahara data-source-delete --id ${input_id}"
+            yellow_desc "${command}"
+            eval ${command}
+        fi
+
+        if [ -n "$output_id" ]; then
+            command="sahara data-source-delete --id ${output_id}"
+            yellow_desc "${command}"
+            eval ${command}
+        fi
+    fi
+done
+
+# Retrieve the IDs of the job binaries and data used by this job.
+binary_id=`sahara job-template-show --name ${job_name} | grep "mains" | awk -F'[,]' '{print $6}' | awk -F'[:]' '{print $2}' | sed "s/ u'\(.*\)'/\1/"`
+binary_data_id=`sahara job-template-show --name ${job_name} | grep "mains" | awk -F'[,]' '{print $2}' | awk -F'/' '{print $3}' | sed "s/\(.*\)'/\1/"`
+lib_id=`sahara job-template-show --name ${job_name} | grep "libs" | awk -F'[,]' '{print $6}' | awk -F'[:]' '{print $2}' | sed "s/ u'\(.*\)'/\1/"`
+lib_data_id=`sahara job-template-show --name ${job_name} | grep "libs" | awk -F'[,]' '{print $2}' | awk -F'/' '{print $3}' | sed "s/\(.*\)'/\1/"`
+
+# Delete the job template.
+if sahara job-template-list | grep " ${job_name} " >/dev/null; then
+    command="sahara job-template-delete --name ${job_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+# Delete the job binaries and the job binary data.
+if [ -n "$binary_id" ]; then
+    command="sahara job-binary-delete --id ${binary_id}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+if [ -n "$lib_id" ]; then
+    command="sahara job-binary-delete --id ${lib_id}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+if [ -n "$binary_data_id" ]; then
+    command="sahara job-binary-data-delete --id ${binary_data_id}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+if [ -n "$lib_data_id" ]; then
+    command="sahara job-binary-data-delete --id ${lib_data_id}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+echo ""
+blue_desc "Job deletion completed."

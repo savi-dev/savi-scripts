@@ -1,0 +1,41 @@
+#!/bin/bash
+unset ERR
+if [[ -n "$1" ]]; then
+   FLAVOR=$1
+else
+   ERR=1
+fi
+if [[ -n "$2" ]]; then
+   IMAGE=$2
+else
+   ERR=1
+fi
+if [[ -n "$3" ]]; then
+   KEY=$3
+else
+   ERR=1
+fi
+if [[ -n "$4" ]]; then
+   SECURITY=$4
+else
+   ERR=1
+fi
+if [[ -n "$5" ]]; then
+   HOST=$5
+else
+   ERR=1
+fi
+if [[ -n "$6" ]]; then
+   VM_NAME=$6
+else
+   ERR=1
+fi
+
+if [[ -z "$ERR" ]]; then
+    #netid=`quantum net-list | grep $OS_TENANT_NAME-net | awk '{print $2}'`
+    #nova boot --flavor $FLAVOR --image $IMAGE --key_name $KEY --nic net-id=$netid --security_groups $SECURITY --hint force_hosts=$HOST $VM_NAME
+    nova boot --flavor $FLAVOR --image $IMAGE --key_name $KEY --security_groups $SECURITY --hint force_hosts=$HOST $VM_NAME
+    nova list
+else
+    echo "savi-run-server-host <flavor> <image> <key> <security group> <host> <vm name>"
+fi

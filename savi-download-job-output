@@ -1,0 +1,129 @@
+#!/bin/bash -f
+#
+# This script download file/directory from Swift or HDFS.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+
+desc="This script download file(s) from Swift or HDFS.
+File(s) will be downloaded from the specified source_url to the specified local path. 
+The source_url is of one of the following forms:
+1. swift://CONTAINER.sahara/OBJECT, where CONTAINER is the name of the Swift container and OBJECT is the Swift object.
+2. hdfs://MASTER_IP:9000/PATH, where MATER_IP is the IP address of the master node and PATH is the HDFS path.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} <source_url> <local_path>
+2. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function command_output_desc() {
+    OUT=$?
+    if [ $OUT -eq 0 ];then
+       echo "Succeeded."
+    else
+       echo $1
+       blue_desc "Failed!"
+       exit 1
+    fi
+}
+
+# Check the prerequisite.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+# Check parameters.
+unset ERR
+if [ -n "$1" ]; then
+    remote_url=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    local_path=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$ERR" ]; then
+    echo "Error: one or multiple arguments were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+blue_desc_title "  Downloading job output"
+
+if [[ $remote_url == swift* ]]; then
+    # Retrieve the Swift container name and path from the url.
+    container_name=`echo "${remote_url}" | grep -o "swift://[^.]*" | xargs basename`
+    swift_path=`echo "${remote_url}" | grep -o "sahara/.*" | sed 's/sahara\///'`
+    # If user specified a path with tailing '/', we remove it.
+    # E.g. '/tmp/' will become '/tmp'.
+    local_path=`echo ${local_path} | sed 's/\/$//'`
+
+    # List all the Swift objects that start with the specified path.
+    swift list ${container_name} | grep "^${swift_path}.*" | while read object; do
+        # Skip the objects with size 0.
+        object_size=`swift stat ${container_name} ${object} | awk '/Content Length:/{print $3}'`
+        if [ "$object_size" != "0" ]; then
+            object_path="${local_path}/${object}"
+            # Create a containing dir if it is not there.
+            base_path=`dirname ${object_path}`
+            mkdir -p ${base_path}
+
+            # Download the Swift object.
+            command="swift download ${container_name} ${object} -o ${object_path}"
+            yellow_desc "${command}"
+            output=`eval ${command}`
+            command_output_desc "${output}"
+        fi
+    done
+elif [[ $remote_url == hdfs* ]]; then
+    # Donwload files/dirs from HDFS.
+    command="hdfs dfs -copyToLocal ${remote_url} ${local_path}"
+    yellow_desc "${command}"
+    output=`eval ${command} 2>&1`
+    command_output_desc "${output}"
+else
+    echo "Invalid source url '${remote_url}'."
+    exit 1
+fi
+
+echo ""
+blue_desc "Output was downloaded."
+

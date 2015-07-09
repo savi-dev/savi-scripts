@@ -1,0 +1,9 @@
+#!/bin/bash -f
+VM_NAME=$OS
+USER="$(whoami)"
+HOST_VM1="$USER"-mon-vm1
+HOST_IP=`nova list | grep $HOST_VM1 | awk '{print $12}' | cut -d "=" -f 2`
+RESOURCE_ID=`nova list | grep $HOST_VM1 | awk '{print $2}'`
+echo "Starting monitoring experiment 2 on "$HOST_IP"..."
+
+ssh ubuntu@$HOST_IP screen -S "ws_ex2" -d -m "python /home/ubuntu/ceilometer-saviwsscript/run_ex2.py $RESOURCE_ID"

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+source /home/savitb/bin/functions
+
+USER="$(whoami)"
+
+if [[ -n "$1" ]]; then
+   KEY_NAME=$1
+else
+   echo "Must specify first parameter (key name)"
+   exit 0
+fi
+
+blue_desc_title "  Initializing all settings for ($USER)"
+
+if [[ ! -f $HOME/.ssh/id_rsa.pub ]]; then
+    green_desc_title "1. Creating a keypair ($KEY_NAME) ..."
+    command_desc "ssh-keygen -t rsa"
+    echo -e "\n" | ssh-keygen -t rsa -N ""
+fi
+AUTH_KEY=$(cat ~/.ssh/id_rsa.pub)
+SECGROUP_NAME=default
+
+green_desc_title "2. Importing the keypair($KEY_NAME) to SAVI Testbed ..."
+command_desc "nova keypair-add --pub_key $HOME/.ssh/id_rsa.pub $KEY_NAME"
+nova keypair-add --pub_key $HOME/.ssh/id_rsa.pub $KEY_NAME
+nova keypair-list
+
+#green_desc_title "3. Creating a security group ($SECGROUP_NAME) ..."
+#command_desc "nova secgroup-create $SECGROUP_NAME \"$SECGROUP_NAME secgroup\""
+#nova secgroup-create $SECGROUP_NAME "$SECGROUP_NAME secgroup"
+
+green_desc_title "4. Adding rules (SSH and PING) to the ($SECGROUP_NAME) ..."
+command_desc "nova secgroup-add-rule $SECGROUP_NAME TCP 22 22 0.0.0.0/0"
+nova secgroup-add-rule $SECGROUP_NAME TCP 22 22 0.0.0.0/0
+command_desc "nova secgroup-add-rule $SECGROUP_NAME ICMP -1 255 0.0.0.0/0"
+nova secgroup-add-rule $SECGROUP_NAME ICMP -1 255 0.0.0.0/0
+
+nova secgroup-list

@@ -1,0 +1,17 @@
+#!/bin/bash -f
+source /home/savitb/bin/functions
+USER=$(whoami)
+HOSTVM="$USER"-hostvm
+METRICVM="$USER"-metricvm
+
+blue_desc_title "Cleaning Part I task"
+
+green_desc_title "  Cleaning all VMs for ($USER)"
+echo "Deleting all VMs..."
+yellow_desc "nova delete $HOSTVM"
+nova delete $HOSTVM
+yellow_desc "nova delete $METRICVM"
+nova delete $METRICVM
+
+echo ""
+blue_desc "Cleaning completed."

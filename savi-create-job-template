@@ -1,0 +1,159 @@
+#!/bin/bash -f
+#
+# This script uploads the application artifacts to Sahara, and create
+# the corresponding job binary objects and a job template.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+
+desc="This script uploads the application artifacts to Sahara, and create
+the corresponding job binary objects and the job template.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} Java <jar_file> [additional_library]
+2. ${script_name} Pig <pig_script> [additional_library]
+3. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function command_output_desc() {
+    OUT=$?
+    if [ $OUT -eq 0 ];then
+       echo "Succeeded."
+    else
+       echo $1
+       blue_desc "Failed!"
+       exit 1
+    fi
+}
+
+# Check the prerequisite.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+# Check parameters.
+unset ERR
+if [ -n "$1" ]; then
+    job_type=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    main_binary=$1
+    shift
+else
+    ERR=1
+fi
+
+if [ -n "$1" ]; then
+    additional_binary=$1
+    shift
+fi
+
+if [ -n "$ERR" ]; then
+    echo "One or multiple arguments were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+if [[ "$job_type" != "Java" && "$job_type" != "Pig" ]]; then
+    echo "Error: '${job_type}' is not a valid job type. Only 'Java' and 'Pig' are allowed."
+    exit 1
+fi
+
+blue_desc_title "  Create job template"
+
+# Thhis step uploads application artifacts to Sahara, and creates job binary
+# objects that store their location.
+green_desc_title "1. Creating job binaries ..."
+
+# Upload the main binary file to Sahara.
+command="sahara job-binary-data-create --file ${main_binary}"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+binary_data_id=`echo ${output} | awk '/ id / {print $9}'`
+binary_name=`basename ${main_binary}`
+
+# Create a job binary object that stores the location of the uploaded file.
+command="sahara job-binary-create --name ${binary_name} --url internal-db://${binary_data_id}"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+main_binary_id=`sahara job-binary-show --name ${binary_name} | awk '/ id /{print $4}'`
+
+if [ -n "$additional_binary" ]; then
+    # If user specified an additoinal binary file, we process it as well.
+    command="sahara job-binary-data-create --file ${additional_binary}"
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "$output"
+
+    binary_data_id=`echo ${output} | awk '/ id /{print $9}'`
+    binary_name=`basename ${additional_binary}`
+
+    command="sahara job-binary-create --name ${binary_name} --url internal-db://${binary_data_id}"
+    yellow_desc "${command}"
+    output=`eval ${command}`
+    command_output_desc "$output"
+    additional_binary_id=`sahara job-binary-show --name ${binary_name} | awk '/ id /{print $4}'`
+fi
+
+green_desc_title "2. Creating a job template ..."
+
+# We choose the name of the job template based on the name of the main binary.
+# E.g. if the main binary is "path/to/myapp.jar", the job template name will be "myapp".
+template_name=`basename ${main_binary} | sed 's/\.[^.]*$//'`
+if [ $job_type = "Java" ]; then
+    command="sahara job-template-create --name ${template_name} --type ${job_type} --lib ${main_binary_id}"
+    if [ -n "$additional_binary_id" ]; then
+        command="${command} --lib ${additional_binary_id}"
+    fi
+elif [ $job_type = "Pig" ]; then
+    command="sahara job-template-create --name ${template_name} --type ${job_type} --main ${main_binary_id}"
+    if [ -n "$additional_binary_id" ]; then
+        command="${command} --lib ${additional_binary_id}"
+    fi
+fi
+
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+echo ""
+blue_desc "Job template was created."

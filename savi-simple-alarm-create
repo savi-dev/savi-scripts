@@ -1,0 +1,37 @@
+#!/bin/bash -f
+
+### --- Default Variables --- ###
+source /home/savitb/bin/functions
+
+METER_NAME='image'
+STATISTIC_VAL='avg'
+COMPARISON_OPERATOR='gt'
+THRESHOLD_VAL=99
+PERIOD_VAL=60
+EVALUATION_PERIODS=3
+
+#!/bin/bash -f
+VM_NAME=$OS
+USER="$(whoami)"
+HOST_VM1="$USER"-mon-vm1
+HOST_IP=`nova list | grep $HOST_VM1 | awk '{print $8}' | cut -d "=" -f 2`
+
+echo -n "Please enter a name for the alarm and press [ENTER]: "
+read name
+
+echo -n "Please enter your email address and press [ENTER]: "
+read email
+
+ALARM_ACTION="email://"$email
+
+if [ $# -eq 0 ]
+then
+    green_desc_title "Creating Alarm"
+    command_desc "ceilometer alarm-threshold-create --name $name --meter-name $METER_NAME --description \"Alarm Configuration\" --statistic $STATISTIC_VAL --comparison-operator $COMPARISON_OPERATOR --threshold $THRESHOLD_VAL --period $PERIOD_VAL --evaluation-periods $EVALUATION_PERIODS --alarm-action $ALARM_ACTION"
+    ceilometer alarm-threshold-create --name $name --meter-name $METER_NAME --description "Alarm Configuration" --statistic $STATISTIC_VAL --comparison-operator $COMPARISON_OPERATOR --threshold $THRESHOLD_VAL --period $PERIOD_VAL --evaluation-periods $EVALUATION_PERIODS --alarm-action $ALARM_ACTION
+else 
+    green_desc_title "Creating Alarm"
+    command_desc "ceilometer alarm-threshold-create --name $name --meter-name $METER_NAME --query resource_id=$1 --description \"Alarm Configuration\" --statistic $STATISTIC_VAL --comparison-operator $COMPARISON_OPERATOR --threshold $THRESHOLD_VAL --period $PERIOD_VAL --evaluation-periods $EVALUATION_PERIODS --alarm-action $ALARM_ACTION"
+    ceilometer alarm-threshold-create --name $name --meter-name $METER_NAME --query resource_id=$1 --description "Alarm Configuration" --statistic $STATISTIC_VAL --comparison-operator $COMPARISON_OPERATOR --threshold $THRESHOLD_VAL --period $PERIOD_VAL --evaluation-periods $EVALUATION_PERIODS --alarm-action $ALARM_ACTION
+
+fi

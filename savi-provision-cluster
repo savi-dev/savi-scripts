@@ -1,0 +1,279 @@
+#!/bin/bash -f
+#
+# This script provision a Hadoop cluster.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+
+desc="This script provision a Hadoop cluster.
+User need to specify the flavor, keypair and size of the cluster. The provisioned cluster will have one master node and the specified number of worker nodes.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} <flavor> <keypair> <cluster_size> <cluster_name>
+2. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+function file_desc() {
+    if [ -f $1 ]; then
+        echo "========>    $1    <========"
+        cat $1
+        echo "========>    End    <========"
+    fi
+}
+
+function command_output_desc() {
+    OUT=$?
+    if [ $OUT -eq 0 ];then
+       echo "Succeeded."
+    else
+       echo $1
+       blue_desc "Failed!"
+       exit 1
+    fi
+}
+
+# Check the prerequisite.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+# Check parameters.
+unset ERR
+if [[ -n "$1" ]]; then
+    flavor_name=$1
+else
+    ERR=1
+fi
+
+if [[ -n "$2" ]]; then
+    keypair=$2
+else
+    ERR=1
+fi
+
+if [[ -n "$3" ]]; then
+    cluster_size=$3
+else
+    ERR=1
+fi
+
+if [[ -n "$4" ]]; then
+    cluster_name=$4
+else
+    ERR=1
+fi
+
+# Validate parameters.
+if [[ -n "$ERR" ]]; then
+    echo "Error: one or multiple parameters were missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+image_id=`nova image-list | awk '/ sahara-icehouse-vanilla-2.3.0-ubuntu-13.10 /{print $2}'`
+if [ -z "$image_id" ]; then
+    echo "Error: the required image 'sahara-icehouse-vanilla-2.3.0-ubuntu-13.10' was not found."
+    exit 1
+fi
+
+flavor_id=`nova flavor-show ${flavor_name} 2>/dev/null | awk '/ id /{print $4}'`
+if [ -z "$flavor_id" ]; then
+    echo "Error: the specified flavor '${flavor_name}' was not found."
+    exit 1
+fi
+
+if ! nova keypair-list | grep " ${keypair} " >/dev/null; then
+    echo "Error: the specified keypair '${keypair}' was not found."
+    exit 1
+fi
+
+secgroup_name=${cluster_name}
+sg=`nova secgroup-list | awk '{if(NR > 3) print $2}' | grep ${secgroup_name}`
+if [ -n "$sg" ]; then
+    echo "Error: the required security group '${secgroup_name}' is taken."
+    exit 1
+fi
+
+cluster_template_name=${cluster_name}-template
+master_template_name=${cluster_name}-master
+worker_template_name=${cluster_name}-worker
+
+blue_desc_title "  Provision a Hadoop cluster"
+
+# Create the required security groups.
+green_desc_title "1. Creating a dedicated security group ..."
+command="nova secgroup-create ${secgroup_name} \"${secgroup_name} secgroup\""
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 8032 8032 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 8088 8088 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 9000 9000 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 11000 11000 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 19888 19888 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 50010 50010 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 50020 50020 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 50070 50070 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+command="nova secgroup-add-rule ${secgroup_name} TCP 50075 50075 0.0.0.0/0"
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+# Create a master node template.
+green_desc_title "2. Creating a master node template ..."
+cat >/tmp/ng_master_template_create.json <<EOL
+{
+    "name": "${master_template_name}",
+    "flavor_id": "${flavor_id}",
+    "plugin_name": "vanilla",
+    "hadoop_version": "2.3.0",
+    "security_groups": ["default", "${secgroup_name}"],
+    "node_processes": ["resourcemanager", "namenode", "oozie", "historyserver"]
+}
+EOL
+command="sahara node-group-template-create < /tmp/ng_master_template_create.json"
+file_desc /tmp/ng_master_template_create.json
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+master_template_id=`sahara node-group-template-show --name ${master_template_name} | awk '/ id / {print $4}'`
+
+# Create a worker node template.
+green_desc_title "3. Creating a worker node template ..."
+cat >/tmp/ng_worker_template_create.json <<EOL
+{
+    "name": "${worker_template_name}",
+    "flavor_id": "${flavor_id}",
+    "plugin_name": "vanilla",
+    "hadoop_version": "2.3.0",
+    "security_groups": ["default", "${secgroup_name}"],
+    "node_processes": ["nodemanager", "datanode"]
+}
+EOL
+command="sahara node-group-template-create < /tmp/ng_worker_template_create.json"
+file_desc /tmp/ng_worker_template_create.json
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+worker_template_id=`sahara node-group-template-show --name ${worker_template_name} | awk '/ id / {print $4}'`
+
+# Create a cluster template.
+green_desc_title "4. Creating a cluster template ..."
+cat >/tmp/cluster_template_create.json <<EOL
+{
+    "name": "${cluster_template_name}",
+    "plugin_name": "vanilla",
+    "hadoop_version": "2.3.0",
+    "cluster_configs": {
+        "HDFS": {
+            "dfs.permissions.enabled": false
+        },
+        "MapReduce": {},
+        "general": {}
+    },
+    "node_groups": [
+        {
+            "name": "master",
+            "node_group_template_id": "${master_template_id}",
+            "count": 1
+        },
+        {
+            "name": "worker",
+            "node_group_template_id": "${worker_template_id}",
+            "count": ${cluster_size}
+        }
+    ]
+}
+EOL
+command="sahara cluster-template-create --json /tmp/cluster_template_create.json"
+file_desc /tmp/cluster_template_create.json
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+cluster_template_id=`sahara cluster-template-show --name ${cluster_template_name} | awk '/ id / {print $4}'`
+
+# Provision the cluster.
+green_desc_title "5. Provisioning the cluster ..."
+cat >/tmp/cluster_create.json <<EOL
+{
+    "name": "${cluster_name}",
+    "plugin_name": "vanilla",
+    "hadoop_version": "2.3.0",
+    "cluster_template_id": "${cluster_template_id}",
+    "user_keypair_id": "${keypair}",
+    "default_image_id": "${image_id}"
+}
+EOL
+command="sahara cluster-create --json /tmp/cluster_create.json"
+file_desc /tmp/cluster_create.json
+yellow_desc "${command}"
+output=`eval ${command}`
+command_output_desc "$output"
+
+echo ""
+blue_desc "Cluster provisioning completed."

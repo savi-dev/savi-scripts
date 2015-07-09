@@ -1,0 +1,106 @@
+#!/bin/bash -f
+# 
+# This script deprovision the specified Hadoop cluster.
+#
+# Prerequisite:
+# * Your Testbed's credentials was exported.
+# * The target hadoop cluster was provisioned by using the savi-* script.
+
+desc="This script deprovision the specified Hadoop cluster.
+"
+
+script_name=`basename $0`
+usage="Usage:
+1. ${script_name} <cluster_name>
+2. ${script_name} help
+"
+
+if [[ -n "$1" && $1 == "help" ]]; then
+    echo "${desc}"
+    echo "${usage}"
+    exit
+fi
+
+source /home/savitb/bin/functions
+
+# Check Testbed's credential.
+if [ -z "$OS_USERNAME" ]; then
+    echo "The environment variable OS_USERNAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_PASSWORD" ]; then
+    echo "The environment variable OS_PASSWORD is not set."
+    exit 1
+fi
+
+if [ -z "$OS_AUTH_URL" ]; then
+    echo "The environment variable OS_AUTH_URL is not set."
+    exit 1
+fi
+
+if [ -z "$OS_TENANT_NAME" ]; then
+    echo "The environment variable OS_TENANT_NAME is not set."
+    exit 1
+fi
+
+if [ -z "$OS_REGION_NAME" ]; then
+    echo "The environment variable OS_REGION_NAME is not set."
+    exit 1
+fi
+
+if [[ -n "$1" ]]; then
+    cluster_name=$1
+else
+    echo "Error: the required argument was missing."
+    echo ""
+    echo "${usage}"
+    exit 1
+fi
+
+cluster_template_name=${cluster_name}-template
+master_template_name=${cluster_name}-master
+worker_template_name=${cluster_name}-worker
+secgroup_name=${cluster_name}
+
+blue_desc_title "  Deprovisioning the cluster"
+
+# Delete the cluster.
+if sahara cluster-list | grep "${cluster_name}" >/dev/null; then
+    command="sahara cluster-delete --name ${cluster_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+# Delete the cluster template.
+if sahara cluster-template-list | grep "${cluster_template_name}" >/dev/null; then
+    command="sahara cluster-template-delete --name ${cluster_template_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+# Delete the worker node group template.
+if sahara node-group-template-list | grep "${worker_template_name}" >/dev/null; then
+    command="sahara node-group-template-delete --name ${worker_template_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+# Delete the master node group template.
+if sahara node-group-template-list | grep "${master_template_name}" >/dev/null; then
+    command="sahara node-group-template-delete --name ${master_template_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+# Delete the security group.
+# We wait 10 seconds here, because the VMs that used this security group need to be completely shutdown.
+sleep 10
+if nova secgroup-list | grep "${secgroup_name}" >/dev/null; then
+    command="nova secgroup-delete ${secgroup_name}"
+    yellow_desc "${command}"
+    eval ${command}
+fi
+
+echo ""
+blue_desc "Cluster was deprovisioned."

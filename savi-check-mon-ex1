@@ -1,0 +1,6 @@
+#!/bin/bash
+USER="$(whoami)"
+HOST_VM1="$USER"-mon-vm1
+HOST_IP=`nova list | grep $HOST_VM1 | awk '{print $8}' | cut -d "=" -f 2`
+
+ssh ubuntu@$HOST_IP 'cat /home/ubuntu/time_left.txt'

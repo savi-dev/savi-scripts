@@ -1,0 +1,8 @@
+#!/bin/bash -f
+USER=$(whoami)
+PRIVATE_NETWORK="$USER"-net
+NET_ID_PRIVATE=`quantum net-list -c id -c name | grep $PRIVATE_NETWORK | awk '{print $2}'`
+echo "-------------------------------------------------------------"
+echo "  Unassigning a ($PRIVATE_NETWORK) for ($USER)"
+echo "-------------------------------------------------------------"
+janus fv-unassignnetwork --network_id $NET_ID_PRIVATE

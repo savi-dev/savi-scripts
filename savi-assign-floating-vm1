@@ -1,0 +1,40 @@
+#!/bin/bash
+source /home/savitb/bin/functions
+USER=$(whoami)
+PROJECT_NAME=$OS_TENANT_NAME
+VM="$USER"-vm1
+MAIN_NETWORK="$PROJECT_NAME"-net
+
+blue_desc_title "  Assigning a floating ip to  $VM for ($USER)"
+
+command_desc "keystone token-get"
+TENANT_ID=`keystone token-get | grep tenant_id | awk '{print $4 }'`
+echo "TENANT_ID=$TENANT_ID"
+command_desc "quanatum net-list"
+NET_ID=`quantum net-list -c id -c name -c subnets | grep ext_net | awk '{print $2}'`
+echo "NET_ID=$NET_ID"
+
+command_desc "nova list"
+VM_IPNET=`nova list | grep $VM | awk '{print $8}'`
+VM_IP=${VM_IPNET#$MAIN_NETWORK=}
+echo "VM1 IP=$VM_IP"
+command_desc "quantum floatingip-create $NET_ID"
+FLOATING_IP=`quantum floatingip-create $NET_ID | grep floating_ip_address | awk '{print $4}'`
+echo "FLOATING IP=$FLOATING_IP"
+
+green_desc_title "Associate $FLOATING_IP to $VM_IP for $VM"
+
+command_desc "quantum port-list"
+PORT_ID=`quantum port-list -c id -c fixed_ips -c tenant_id | grep $TENANT_ID | grep "$VM_IP" | awk '{print $7}'`
+echo "PORT_ID=$PORT_ID"
+FLOATING_IP_ID=`quantum floatingip-list | grep "$FLOATING_IP" | awk '{print $2}'`
+
+# disassociate whether it is associated or not, for safety.
+command_desc "quantum floatingip-disassociate $FLOATING_IP_ID"
+quantum floatingip-disassociate $FLOATING_IP_ID
+
+command_desc "quantum floatingip-associate $FLOATING_IP_ID $PORT_ID"
+quantum floatingip-associate $FLOATING_IP_ID $PORT_ID
+
+yellow_desc "quantum floatingip-list"
+quantum floatingip-list
